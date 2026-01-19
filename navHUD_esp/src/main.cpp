@@ -261,7 +261,6 @@ class RxCallbacks : public BLECharacteristicCallbacks
         Serial.println();
         // --------------------------------
         bleBusy = false;
-
         reset();
     }
 };
@@ -343,5 +342,6 @@ void setup()
 
 void loop()
 {
-    delay(100);
+    vTaskDelay(100);
+    // delay(500);
 }
