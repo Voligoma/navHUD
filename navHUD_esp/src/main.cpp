@@ -5,8 +5,6 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "esp_sleep.h"
-#include <WiFi.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -19,6 +17,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 BLECharacteristic *rxCharacteristic;
 std::string rxBuffer;
+volatile bool bleBusy = false;
 
 static constexpr size_t IMAGE_BYTES = 288;
 bool isconnected;
@@ -170,13 +169,16 @@ class ServerCallbacks : public BLEServerCallbacks
         display.fillRect(108, 44, 20, 20, 0);
         display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
         display.display();
+        analogWrite(LEDPIN, 0);
     }
 
     void onDisconnect(BLEServer *server) override
     {
         isconnected = 0;
+        analogWrite(LEDPIN, 5);
         Serial.println("Client disconnected");
-        display.ssd1306_command(SSD1306_DISPLAYOFF);
+        display.fillRect(108, 44, 20, 20, 0);
+        display.display();
         BLEDevice::startAdvertising();
     }
 };
@@ -200,6 +202,7 @@ class RxCallbacks : public BLECharacteristicCallbacks
 
     void onWrite(BLECharacteristic *characteristic) override
     {
+        bleBusy = true;
         std::string value = characteristic->getValue();
         if (value.size() < 2)
             return; // invalid packet
@@ -257,6 +260,7 @@ class RxCallbacks : public BLECharacteristicCallbacks
         Display(rxBuffer, 48, 48);
         Serial.println();
         // --------------------------------
+        bleBusy = false;
 
         reset();
     }
@@ -264,6 +268,8 @@ class RxCallbacks : public BLECharacteristicCallbacks
 
 void BLEinit()
 {
+    pinMode(LEDPIN, OUTPUT);
+    analogWrite(LEDPIN, 5);
     BLEDevice::init("navHUD");
 
     BLEServer *server = BLEDevice::createServer();
@@ -311,11 +317,9 @@ void func()
 
 void setup()
 {
-    setCpuFrequencyMhz(80);
-
     Serial.begin(115200);
-    
-    WiFi.mode(WIFI_OFF);
+    Serial.println("USB serial OK");
+
     Wire.begin(8, 9);
 
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
@@ -333,11 +337,11 @@ void setup()
     display.print("navHUD");
     display.drawBitmap(40, 16, logo, 48, 48, 1);
     display.display();
-    delay(200);
+    delay(2000);
     BLEinit();
 }
 
 void loop()
 {
-    esp_light_sleep_start();
+    delay(100);
 }
