@@ -5,6 +5,8 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "esp_sleep.h"
+#include <WiFi.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -168,16 +170,13 @@ class ServerCallbacks : public BLEServerCallbacks
         display.fillRect(108, 44, 20, 20, 0);
         display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
         display.display();
-        analogWrite(LEDPIN, 0);
     }
 
     void onDisconnect(BLEServer *server) override
     {
         isconnected = 0;
-        analogWrite(LEDPIN, 5);
         Serial.println("Client disconnected");
-        display.fillRect(108, 44, 20, 20, 0);
-        display.display();
+        display.ssd1306_command(SSD1306_DISPLAYOFF);
         BLEDevice::startAdvertising();
     }
 };
@@ -265,8 +264,6 @@ class RxCallbacks : public BLECharacteristicCallbacks
 
 void BLEinit()
 {
-    pinMode(LEDPIN, OUTPUT);
-    analogWrite(LEDPIN, 5);
     BLEDevice::init("navHUD");
 
     BLEServer *server = BLEDevice::createServer();
@@ -314,13 +311,12 @@ void func()
 
 void setup()
 {
+    setCpuFrequencyMhz(80);
+
     Serial.begin(115200);
-    while (!Serial)
-        delay(10);
-    Serial.println("USB serial OK");
-
+    
+    WiFi.mode(WIFI_OFF);
     Wire.begin(8, 9);
-
 
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
     {
@@ -337,11 +333,11 @@ void setup()
     display.print("navHUD");
     display.drawBitmap(40, 16, logo, 48, 48, 1);
     display.display();
-    delay(2000);
+    delay(200);
     BLEinit();
 }
 
 void loop()
 {
-    delay(1);
+    esp_light_sleep_start();
 }
