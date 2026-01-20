@@ -11,7 +11,6 @@
 #define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
-#define LEDPIN 2
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c2d9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-abe1-4688-b7f5-ea07361b26a8"
 
@@ -169,13 +168,11 @@ class ServerCallbacks : public BLEServerCallbacks
         display.fillRect(108, 44, 20, 20, 0);
         display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
         display.display();
-        analogWrite(LEDPIN, 0);
     }
 
     void onDisconnect(BLEServer *server) override
     {
         isconnected = 0;
-        analogWrite(LEDPIN, 5);
         Serial.println("Client disconnected");
         display.fillRect(108, 44, 20, 20, 0);
         display.display();
@@ -267,8 +264,6 @@ class RxCallbacks : public BLECharacteristicCallbacks
 
 void BLEinit()
 {
-    pinMode(LEDPIN, OUTPUT);
-    analogWrite(LEDPIN, 5);
     BLEDevice::init("navHUD");
 
     BLEServer *server = BLEDevice::createServer();
@@ -292,32 +287,10 @@ void BLEinit()
     Serial.println("BLE advertising started");
 }
 
-void func()
-{
-    Serial.println("Scanning I2C bus...");
-    bool found = false;
-
-    for (uint8_t addr = 1; addr < 127; addr++)
-    {
-        Wire.beginTransmission(addr);
-        if (Wire.endTransmission() == 0)
-        {
-            Serial.print("Found device at 0x");
-            Serial.println(addr, HEX);
-            found = true;
-        }
-    }
-
-    if (!found)
-    {
-        Serial.println("No I2C devices found");
-    }
-}
-
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("USB serial OK");
+    setCpuFrequencyMhz(80);
 
     Wire.begin(8, 9);
 
@@ -327,6 +300,7 @@ void setup()
         for (;;)
             Serial.println("SSD1306 allocation failed");
     }
+
     display.clearDisplay();
     display.setCursor(30, 0);
     display.setTextColor(0);
@@ -336,7 +310,6 @@ void setup()
     display.print("navHUD");
     display.drawBitmap(40, 16, logo, 48, 48, 1);
     display.display();
-    delay(2000);
     BLEinit();
 }
 
