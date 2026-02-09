@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -32,30 +33,30 @@ import aer.app.navhud.ui.theme.NavHUDTheme
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var bleManager: BleManager
+    private lateinit var bluetoothManager: BluetoothSppManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allPermissionsGranted = permissions.all { it.value }
         if (allPermissionsGranted) {
-            bleManager.startConnectionLoop()
+            bluetoothManager.startConnectionLoop()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        bleManager = (application as NavHudApplication).bleManager
+        bluetoothManager = (application as NavHudApplication).bluetoothManager
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // Request necessary permissions on startup
-        requestBlePermissions()
+        requestBluetoothPermissions()
 
         setContent {
             NavHUDTheme {
                 val navInfo by NavigationRepository.navInfo.collectAsState()
-                val isBleConnected by bleManager.isConnected.collectAsState()
+                val isBluetoothConnected by bluetoothManager.isConnected.collectAsState()
                 val lifecycleOwner = LocalLifecycleOwner.current
 
                 var isNotificationEnabled by remember { mutableStateOf(false) }
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationDashboard(
                         navInfo = navInfo,
-                        isBleConnected = isBleConnected,
+                        isBluetoothConnected = isBluetoothConnected,
                         showNotificationButton = !isNotificationEnabled,
                         onOpenNotificationSettings = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
                         modifier = Modifier.padding(innerPadding)
@@ -79,19 +80,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestBlePermissions() {
+    private fun requestBluetoothPermissions() {
+        // For SPP with bonded devices, only BLUETOOTH_CONNECT is needed on Android 12+
+        // Older versions only need BLUETOOTH/BLUETOOTH_ADMIN (declared in manifest)
         val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            arrayOf(Manifest.permission.BLUETOOTH_CONNECT)
         } else {
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            emptyArray() // No runtime permissions needed for Android < 12
         }
 
         val allPermissionsGranted = requiredPermissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
 
-        if (allPermissionsGranted) {
-            bleManager.startConnectionLoop()
+        if (allPermissionsGranted || requiredPermissions.isEmpty()) {
+            bluetoothManager.startConnectionLoop()
         } else {
             requestPermissionLauncher.launch(requiredPermissions)
         }
@@ -107,7 +110,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NavigationDashboard(
     navInfo: NavInfo,
-    isBleConnected: Boolean,
+    isBluetoothConnected: Boolean,
     showNotificationButton: Boolean,
     onOpenNotificationSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -124,7 +127,7 @@ fun NavigationDashboard(
         } ?: Spacer(modifier = Modifier.height(150.dp))
 
         Spacer(modifier = Modifier.height(24.dp))
-
+        Log.d("TEST", navInfo.instruction)
         Text(
             text = navInfo.instruction,
             style = MaterialTheme.typography.displayMedium,
@@ -140,8 +143,8 @@ fun NavigationDashboard(
         Spacer(modifier = Modifier.weight(1f))
 
         Text(
-            text = if (isBleConnected) "BLE Connected" else "BLE Disconnected",
-            color = if (isBleConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            text = if (isBluetoothConnected) "Bluetooth Connected" else "Bluetooth Disconnected",
+            color = if (isBluetoothConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
         )
 
         Spacer(modifier = Modifier.height(16.dp))

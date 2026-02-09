@@ -18,7 +18,7 @@ import java.io.ByteArrayOutputStream
 
 class MapsNotificationListener : NotificationListenerService() {
 
-    private lateinit var bleManager: BleManager
+    private lateinit var bluetoothManager: BluetoothSppManager
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
 
@@ -26,18 +26,18 @@ class MapsNotificationListener : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
-        bleManager = (application as NavHudApplication).bleManager
+        bluetoothManager = (application as NavHudApplication).bluetoothManager
 
-        // Observe the READY state to send data immediately upon connection and service discovery
+        // Observe the READY state to send data immediately upon connection
         serviceScope.launch {
-            bleManager.isReady.collect { isReady ->
+            bluetoothManager.isReady.collect { isReady ->
                 if (isReady) {
-                    Log.d("MapsListener", "BLE is ready. Checking for pending navigation data...")
+                    Log.d("MapsListener", "Bluetooth is ready. Checking for pending navigation data...")
                     val currentNavInfo = NavigationRepository.navInfo.value
                     if (currentNavInfo.isNavigating) {
                         Log.d("MapsListener", "Pending data found. Sending upon connection.")
-                        val data = serializeForBle(currentNavInfo.instruction, currentNavInfo.details, currentNavInfo.subText, currentNavInfo.icon)
-                        bleManager.sendData(data)
+                        val data = serializeForBluetooth(currentNavInfo.instruction, currentNavInfo.details, currentNavInfo.subText)
+                        bluetoothManager.sendData(data)
                     }
                 }
             }
@@ -62,9 +62,9 @@ class MapsNotificationListener : NotificationListenerService() {
                 delay(2000L)
                 Log.d("MapsListener", "Navigation stop delay finished. Sending Standby.")
                 NavigationRepository.setNavigationStopped()
-                if (bleManager.isConnected.value) {
-                    val standbyData = serializeForBle("Standby State", "", "", null)
-                    bleManager.sendData(standbyData)
+                if (bluetoothManager.isConnected.value) {
+                    val standbyData = serializeForBluetooth("Standby State", "", "")
+                    bluetoothManager.sendData(standbyData)
                 }
             }
         }
@@ -79,8 +79,10 @@ class MapsNotificationListener : NotificationListenerService() {
 
     private fun toAsciiSafe(input: String?): String? {
         return input
+            
             ?.replace('·', '|')
-            ?.replace(Regex("[^\\x20-\\x7E]"), "")
+            //?.replace(Regex("[^\\x20-\\xA5]"), "")
+            
     }
 
     private fun processNotification(sbn: StatusBarNotification) {
@@ -94,13 +96,13 @@ class MapsNotificationListener : NotificationListenerService() {
 
         Log.d("MapsListener", "Auto-Update: $title - $text - $subText")
 
-        val fullData = serializeForBle(title, text, subText, bitmap)
-        bleManager.sendData(fullData)
+        val fullData = serializeForBluetooth(title, text, subText)
+        bluetoothManager.sendData(fullData)
 
         NavigationRepository.update(instruction = title, details = text, subText = subText, icon = bitmap)
     }
 
-    private fun serializeForBle(title: String?, details: String?, subText: String?, bitmap: Bitmap?): ByteArray {
+    private fun serializeForBluetooth(title: String?, details: String?, subText: String?): ByteArray {
         val outputStream = ByteArrayOutputStream()
         val fieldDelimiter = "|".toByteArray()
         val endOfMessage = "\n".toByteArray()
@@ -113,24 +115,6 @@ class MapsNotificationListener : NotificationListenerService() {
 
         if (subText != null) outputStream.write(subText.toByteArray())
         outputStream.write(fieldDelimiter)
-
-        if (bitmap != null) {
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 48, 48, true)
-            val monochromeData = ByteArray(48 * 48 / 8)
-            for (i in monochromeData.indices) {
-                var currentByte = 0
-                for (j in 0..7) {
-                    val pixelIndex = i * 8 + j
-                    val x = pixelIndex % 48
-                    val y = pixelIndex / 48
-                    if (scaledBitmap.getPixel(x, y) ushr 24 > 128) {
-                        currentByte = currentByte or (1 shl (7 - j))
-                    }
-                }
-                monochromeData[i] = currentByte.toByte()
-            }
-            outputStream.write(monochromeData)
-        }
 
         outputStream.write(endOfMessage)
 

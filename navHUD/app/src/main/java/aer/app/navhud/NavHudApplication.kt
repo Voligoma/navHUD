@@ -4,10 +4,10 @@ import android.app.Application
 
 class NavHudApplication : Application() {
 
-    lateinit var bleManager: BleManager
+    lateinit var bluetoothManager: BluetoothSppManager
 
     override fun onCreate() {
         super.onCreate()
-        bleManager = BleManager(this)
+        bluetoothManager = BluetoothSppManager(this)
     }
 }

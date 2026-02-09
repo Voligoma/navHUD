@@ -9,13 +9,13 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 
-class BleConnectionService : Service() {
+class BluetoothConnectionService : Service() {
 
-    private lateinit var bleManager: BleManager
+    private lateinit var bluetoothManager: BluetoothSppManager
 
     override fun onCreate() {
         super.onCreate()
-        bleManager = (application as NavHudApplication).bleManager
+        bluetoothManager = (application as NavHudApplication).bluetoothManager
         createNotificationChannel()
     }
 
@@ -28,14 +28,14 @@ class BleConnectionService : Service() {
 
         startForeground(1, notification)
 
-        bleManager.startConnectionLoop()
+        bluetoothManager.startConnectionLoop()
 
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        bleManager.stopConnectionLoop()
+        bluetoothManager.stopConnectionLoop()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -55,6 +55,6 @@ class BleConnectionService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "BleConnectionServiceChannel"
+        const val CHANNEL_ID = "BluetoothConnectionServiceChannel"
     }
 }
