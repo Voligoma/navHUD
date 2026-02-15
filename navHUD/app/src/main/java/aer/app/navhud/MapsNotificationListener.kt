@@ -14,6 +14,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
 
 class MapsNotificationListener : NotificationListenerService() {
@@ -36,7 +39,7 @@ class MapsNotificationListener : NotificationListenerService() {
                     val currentNavInfo = NavigationRepository.navInfo.value
                     if (currentNavInfo.isNavigating) {
                         Log.d("MapsListener", "Pending data found. Sending upon connection.")
-                        val data = serializeForBluetooth(currentNavInfo.instruction, currentNavInfo.details, currentNavInfo.subText)
+                        val data = serializeForBluetooth(currentNavInfo.instruction, currentNavInfo.details, currentNavInfo.subText, currentNavInfo.icon)
                         bluetoothManager.sendData(data)
                     }
                 }
@@ -63,7 +66,7 @@ class MapsNotificationListener : NotificationListenerService() {
                 Log.d("MapsListener", "Navigation stop delay finished. Sending Standby.")
                 NavigationRepository.setNavigationStopped()
                 if (bluetoothManager.isConnected.value) {
-                    val standbyData = serializeForBluetooth("Standby State", "", "")
+                    val standbyData = serializeForBluetooth("Standby State", "", "", null)
                     bluetoothManager.sendData(standbyData)
                 }
             }
@@ -96,29 +99,63 @@ class MapsNotificationListener : NotificationListenerService() {
 
         Log.d("MapsListener", "Auto-Update: $title - $text - $subText")
 
-        val fullData = serializeForBluetooth(title, text, subText)
+        val fullData = serializeForBluetooth(title, text, subText, bitmap)
         bluetoothManager.sendData(fullData)
 
         NavigationRepository.update(instruction = title, details = text, subText = subText, icon = bitmap)
     }
 
-    private fun serializeForBluetooth(title: String?, details: String?, subText: String?): ByteArray {
+    @Serializable
+    data class navData(val title: String?, val details: String?, val subText: String?, val icon: UByteArray?)
+
+    private fun serializeForBluetooth(title: String?, details: String?, subText: String?, bitmap: Bitmap?): ByteArray {
         val outputStream = ByteArrayOutputStream()
-        val fieldDelimiter = "|".toByteArray()
         val endOfMessage = "\n".toByteArray()
+        Log.d("MapsListener", "Serializing for Bluetooth: $title - $details - $subText -Bitmap: ${bitmap != null}")
 
-        if (title != null) outputStream.write(title.toByteArray())
-        outputStream.write(fieldDelimiter)
+        var monochromeData: UByteArray? = null
+        if (bitmap != null) {
+            monochromeData = convertBitmapToMonochrome(bitmap)
+        }
 
-        if (details != null) outputStream.write(details.toByteArray())
-        outputStream.write(fieldDelimiter)
+        val navdata = navData(title, details, subText, monochromeData)
+        val jsonString = Json.encodeToString(navdata)
 
-        if (subText != null) outputStream.write(subText.toByteArray())
-        outputStream.write(fieldDelimiter)
+        
+        Log.d("MapsListener", "Serialized JSON: $jsonString")
 
-        outputStream.write(endOfMessage)
+        outputStream.write(jsonString.toByteArray())
+
+        outputStream.write(endOfMessage) 
 
         return outputStream.toByteArray()
+    }
+
+    private fun convertBitmapToMonochrome(bitmap: Bitmap): UByteArray {
+        Log.d("MapsListener", "Bitmap original: ${bitmap.width}x${bitmap.height}")
+        
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 90, 90, true)
+        val monochromeData = UByteArray(90 * 90 / 8)
+        
+        var pixelsOn = 0
+        for (i in monochromeData.indices) {
+            var currentByte = 0
+            for (j in 0..7) {
+                val pixelIndex = i * 8 + j
+                val x = pixelIndex % 90
+                val y = pixelIndex / 90
+                val alpha = scaledBitmap.getPixel(x, y) ushr 24
+                
+                if (alpha > 128) {
+                    currentByte = currentByte or (1 shl (7 - j))
+                    pixelsOn++
+                }
+            }
+            monochromeData[i] = currentByte.toUByte()
+        }
+        
+        Log.d("MapsListener", "Monochrome: $pixelsOn / 8100 píxeles encendidos")
+        return monochromeData
     }
 
     private fun getNotificationBitmap(notification: Notification): Bitmap? {
