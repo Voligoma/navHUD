@@ -1,320 +1,210 @@
 #include <Arduino.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include "BluetoothSerial.h"
+#include "string.h"
+#include <ArduinoJson.h>
+#include "symbols2.h"
+#include "esp_spp_api.h"
 
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
+TFT_eSPI tft = TFT_eSPI();
+u_int32_t t1 = 0;
 
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c2d9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-abe1-4688-b7f5-ea07361b26a8"
+#include "Free_Fonts.h"
 
-BLECharacteristic *rxCharacteristic;
-std::string rxBuffer;
-volatile bool bleBusy = false;
+#define TS_MINX 320
+#define TS_MAXX 3800
+#define TS_MINY 320
+#define TS_MAXY 3900
 
-static constexpr size_t IMAGE_BYTES = 288;
-bool isconnected;
+#define BACKLIGHT_PIN 13
 
-const uint8_t logo[] PROGMEM = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x80,
-    0x00, 0x00, 0x00, 0x00, 0x03, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x03, 0xc0, 0x00, 0x00, 0x00, 0x00,
-    0x07, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x07, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x07, 0xe0, 0x00, 0x00,
-    0x00, 0x00, 0x0f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x0f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x1e, 0x78,
-    0x00, 0x00, 0x00, 0x00, 0x1e, 0x78, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x7c, 0x00, 0x00, 0x00, 0x00,
-    0x3c, 0x3c, 0x00, 0x00, 0x00, 0x00, 0x3c, 0x3c, 0x00, 0x00, 0x00, 0x00, 0x78, 0x1e, 0x00, 0x00,
-    0x00, 0x00, 0x78, 0x1e, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x1f, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x0f,
-    0x00, 0x00, 0x00, 0x01, 0xf0, 0x0f, 0x80, 0x00, 0x00, 0x01, 0xe0, 0x07, 0x80, 0x00, 0x00, 0x01,
-    0xe0, 0x07, 0x80, 0x00, 0x00, 0x03, 0xc0, 0x03, 0xc0, 0x00, 0x00, 0x03, 0xc0, 0x03, 0xc0, 0x00,
-    0x00, 0x07, 0xc0, 0x03, 0xe0, 0x00, 0x00, 0x07, 0x80, 0x01, 0xe0, 0x00, 0x00, 0x0f, 0x80, 0x01,
-    0xf0, 0x00, 0x00, 0x0f, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x0f, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x1e,
-    0x00, 0x00, 0x78, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x78, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x3c, 0x00,
-    0x00, 0x3c, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x3c, 0x03, 0xc0, 0x3c, 0x00, 0x00, 0x78, 0x0f, 0xf0,
-    0x1e, 0x00, 0x00, 0x78, 0x3f, 0xfc, 0x1e, 0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 0xf1,
-    0xfe, 0x7f, 0x8f, 0x00, 0x01, 0xf7, 0xf8, 0x1f, 0xef, 0x80, 0x01, 0xff, 0xe0, 0x07, 0xff, 0x80,
-    0x03, 0xff, 0x80, 0x01, 0xff, 0xc0, 0x03, 0xfe, 0x00, 0x00, 0x7f, 0xc0, 0x03, 0xf8, 0x00, 0x00,
-    0x1f, 0xc0, 0x07, 0xe0, 0x00, 0x00, 0x07, 0xe0, 0x03, 0xc0, 0x00, 0x00, 0x03, 0xc0, 0x01, 0x00,
-    0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+String title = "";
+String details = "";
+String subText = "";
 
-const uint8_t bleConnected[] = {
-    0x00, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x03, 0xfc, 0x00, 0x0f, 0xff, 0x00, 0x1f, 0x9f, 0x80, 0x1f,
-    0x8f, 0x80, 0x3f, 0x87, 0xc0, 0x3e, 0x07, 0xc0, 0x7f, 0x0f, 0xe0, 0x7f, 0x9f, 0xe0, 0x7f, 0x9f,
-    0xe0, 0x7f, 0x0f, 0xe0, 0x3e, 0x07, 0xc0, 0x3e, 0x87, 0xc0, 0x1f, 0x8f, 0x80, 0x1f, 0x9f, 0x80,
-    0x0f, 0xff, 0x00, 0x03, 0xfc, 0x00, 0x00, 0xf0, 0x00, 0x00, 0x00, 0x00};
-/*
-Display design:
-0,0 to 128,16 is for text (ETA, KM remaining, etc)
-0,16 to 48,64 is image
-0,48 to 128,64 is directions
-*/
-void Display(
-    const std::vector<uint8_t> &rxBuffer,
-    int width,
-    int height)
+volatile u_int8_t bluetooth_status = 0; // 0=false, 1 = connected, 2 = no change
+
+uint8_t bitmapData[1013];
+uint8_t old_bitmapData[1013];
+
+BluetoothSerial BT;
+bool getPixel(int x, int y, const uint8_t *data);
+
+void clear_indication_text()
 {
-    if (rxBuffer.size() < IMAGE_BYTES)
-    {
-
-        Serial.println("Not enough data for image");
-        display.clearDisplay();
-
-        display.setCursor(30, 0);
-        display.setTextColor(0);
-        display.setTextSize(2);
-        display.setTextWrap(1);
-        display.fillRect(0, 0, 128, 16, 1);
-        display.print("navHUD");
-        display.drawBitmap(40, 16, logo, 48, 48, 1);
-        display.fillRect(108, 44, 20, 20, 0);
-        if (isconnected)
-            display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
-        display.display();
-        return;
-    }
-    size_t textSize = rxBuffer.size() - IMAGE_BYTES;
-
-    // Extract text BEFORE the image
-    std::string s(
-        reinterpret_cast<const char *>(rxBuffer.data()),
-        textSize);
-
-    std::string next, eta, direction, data;
-
-    int index = 0, sel = 0;
-    for (; index < s.size(); index++)
-    {
-        if (s[index] == '|' || s[index] == '-')
-        {
-            sel++;
-            if (s[index] == '|')
-                continue;
-        }
-        switch (sel)
-        {
-        case 0:
-            next = next + s[index];
-            break;
-        case 1:
-            direction = direction + s[index];
-            break;
-        case 2:
-            data = data + s[index];
-            break;
-        case 3:
-            data = data + s[index];
-            break;
-        case 4:
-            if ((s[index] == ' ' || s[index] == '-') && eta.size() <= 1)
-                continue;
-            eta = eta + s[index];
-            break;
-        }
-    }
-    Serial.println(next.c_str());
-    Serial.println(direction.c_str());
-    Serial.println(data.c_str());
-    Serial.println(eta.c_str());
-
-    display.setCursor(0, 0);
-    display.setTextColor(1);
-    display.setTextSize(1);
-    display.setTextWrap(1);
-
-    display.fillRect(0, 0, 128, 16, 0);
-    display.print(data.c_str());
-
-    display.setCursor(0, 8);
-    display.print(eta.c_str());
-
-    display.setCursor(48, 16);
-    display.fillRect(48, 16, 128, 44, 0);
-    display.setTextSize(2);
-    display.print(next.c_str());
-
-    display.setCursor(48, 32);
-    display.fillRect(48, 32, 128, 44, 0);
-    display.setTextSize(1);
-    display.print(direction.c_str());
-
-    // Pointer to last 288 bytes
-    const uint8_t *image =
-        rxBuffer.data() + (rxBuffer.size() - IMAGE_BYTES) - 1;
-
-    // Sanity check
-    if (width * height != IMAGE_BYTES * 8)
-    {
-        Serial.println("Bitmap dimension mismatch");
-        return;
-    }
-    display.fillRect(0, 16, 48, 48, 0);
-    display.drawBitmap(0, 16, image, 48, 48, 1);
-    display.fillRect(108, 44, 20, 20, 0);
-    if (isconnected)
-        display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
-    display.display();
+  tft.fillRect(0, 90, 240, 90, TFT_GOOGLE_GREEN);
 }
 
-class ServerCallbacks : public BLEServerCallbacks
+void clear_bitmap_area()
 {
-    void onConnect(BLEServer *server) override
-    {
-        isconnected = 1;
-        Serial.println("Client connected");
-        display.fillRect(108, 44, 20, 20, 0);
-        display.drawBitmap(108, 44, bleConnected, 20, 20, 1);
-        display.display();
-    }
-
-    void onDisconnect(BLEServer *server) override
-    {
-        isconnected = 0;
-        Serial.println("Client disconnected");
-        display.fillRect(108, 44, 20, 20, 0);
-        display.display();
-        BLEDevice::startAdvertising();
-    }
-};
-class RxCallbacks : public BLECharacteristicCallbacks
-{
-    static constexpr size_t MAX_IMAGE_SIZE = 288;
-    static constexpr size_t MAX_CHUNKS = 255;
-
-    std::vector<uint8_t> rxBuffer;
-    std::vector<bool> received;
-    uint8_t expectedChunks = 0;
-    bool receiving = false;
-
-    void reset()
-    {
-        rxBuffer.clear();
-        received.clear();
-        expectedChunks = 0;
-        receiving = false;
-    }
-
-    void onWrite(BLECharacteristic *characteristic) override
-    {
-        bleBusy = true;
-        std::string value = characteristic->getValue();
-        if (value.size() < 2)
-            return; // invalid packet
-
-        const uint8_t chunkIndex = value[0];
-        const uint8_t totalChunks = value[1];
-        const uint8_t *payload = (const uint8_t *)&value[2];
-        const size_t payloadLen = value.size() - 2;
-
-        // First packet initializes state
-        if (!receiving)
-        {
-            expectedChunks = totalChunks;
-            received.assign(totalChunks, false);
-            rxBuffer.resize(totalChunks * 18); // max possible size
-            receiving = true;
-
-            Serial.printf("Starting transfer: %d chunks\n", totalChunks);
-        }
-
-        // Sanity checks
-        if (totalChunks != expectedChunks || chunkIndex >= expectedChunks)
-        {
-            Serial.println("Protocol error, resetting");
-            reset();
-            return;
-        }
-
-        if (received[chunkIndex])
-        {
-            return;
-        }
-
-        // Copy payload to correct offset
-        const size_t offset = chunkIndex * 18;
-        memcpy(rxBuffer.data() + offset, payload, payloadLen);
-        received[chunkIndex] = true;
-
-        Serial.printf(
-            "Received chunk %d/%d (%d bytes)\n",
-            chunkIndex + 1, expectedChunks, payloadLen);
-
-        // Check if all chunks arrived
-        for (bool ok : received)
-            if (!ok)
-                return;
-
-        // Trim to actual size
-        rxBuffer.resize(
-            (expectedChunks - 1) * 18 + payloadLen);
-
-        Serial.printf("Full image received (%d bytes)\n", rxBuffer.size());
-
-        // ---- process image here ----
-        Display(rxBuffer, 48, 48);
-        Serial.println();
-        // --------------------------------
-        bleBusy = false;
-        reset();
-    }
-};
-
-void BLEinit()
-{
-    BLEDevice::init("navHUD");
-
-    BLEServer *server = BLEDevice::createServer();
-    server->setCallbacks(new ServerCallbacks);
-    BLEService *service = server->createService(SERVICE_UUID);
-
-    rxCharacteristic = service->createCharacteristic(
-        CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_WRITE |
-            BLECharacteristic::PROPERTY_WRITE_NR);
-
-    rxCharacteristic->setCallbacks(new RxCallbacks());
-
-    service->start();
-
-    BLEAdvertising *advertising = BLEDevice::getAdvertising();
-    advertising->addServiceUUID(SERVICE_UUID);
-    advertising->setScanResponse(true);
-
-    BLEDevice::startAdvertising();
-    Serial.println("BLE advertising started");
+  tft.fillRect(75, 0, 90, 90, TFT_GOOGLE_GREEN);
 }
 
-void setup()
+void clear_bluetooth_icon()
 {
-    Serial.begin(115200);
-    setCpuFrequencyMhz(80);
-
-    Wire.begin(8, 9);
-
-    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
-    {
-        Serial.println("SSD1306 allocation failed");
-        for (;;)
-            Serial.println("SSD1306 allocation failed");
-    }
-
-    display.clearDisplay();
-    display.setCursor(30, 0);
-    display.setTextColor(0);
-    display.setTextSize(2);
-    display.setTextWrap(1);
-    display.fillRect(0, 0, 128, 16, 1);
-    display.print("navHUD");
-    display.drawBitmap(40, 16, logo, 48, 48, 1);
-    display.display();
-    BLEinit();
+  tft.fillRect(0, 0, 30, 30, TFT_GOOGLE_GREEN);
 }
+
+void btCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
+{ // Tiene que rapido, si no se enoja el watchdog
+  switch (event)
+  {
+  case ESP_SPP_SRV_OPEN_EVT:
+    bluetooth_status = 1;
+    break;
+  case ESP_SPP_CLOSE_EVT:
+    bluetooth_status = 0;
+    break;
+  default:
+    break;
+  }
+}
+
+void displayBitmap(int x, int y)
+{
+  // Dibuja el bitmap de 90x90 píxeles
+  for (int py = 0; py < 90; py++)
+  {
+    for (int px = 0; px < 90; px++)
+    {
+      if (getPixel(px, py, bitmapData))
+      {
+        tft.drawPixel(x + px, y + py, TFT_WHITE);
+      }
+    }
+  }
+}
+
+bool getPixel(int x, int y, const uint8_t *data)
+{
+  int pixelIndex = y * 90 + x;
+  int byteIndex = pixelIndex / 8;
+  int bitIndex = 7 - (pixelIndex % 8);
+  return (data[byteIndex] >> bitIndex) & 1;
+}
+
+void setup(void)
+{
+  Serial.begin(115200);
+  Serial.println("\n\nStarting...");
+
+  pinMode(BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(BACKLIGHT_PIN, LOW);
+
+  tft.init();
+  tft.fillScreen(TFT_BLACK);
+  tft.fillRect(0, 0, 240, 90, TFT_GOOGLE_GREEN);
+  tft.drawBitmap(0, 0, epd_bitmap_bluetooth_disabled_90dp_FFFFFF_FILL0_wght400_GRAD0_opsz48, 30, 30, TFT_WHITE, TFT_GOOGLE_GREEN);
+  digitalWrite(BACKLIGHT_PIN, HIGH);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextFont(FONT2);
+
+  BT.begin("Buan-navHUD"); // Nombre del dispositivo Bluetooth
+  BT.register_callback(btCallback);
+  BT.setPin("1234"); // Establece el PIN para emparejamiento
+  Serial.println("El dispositivo Bluetooth está listo para emparejarse.");
+}
+
+//====================================================================
 
 void loop()
 {
-    vTaskDelay(100);
-    // delay(500);
+
+  if (bluetooth_status != 2)
+  {
+    if (bluetooth_status == 1)
+    {
+      clear_bluetooth_icon();
+      tft.drawBitmap(0, 0, epd_bitmap_bluetooth_90dp_FFFFFF_FILL0_wght400_GRAD0_opsz48, 30, 30, TFT_WHITE, TFT_GOOGLE_GREEN);
+    }
+    else
+    {
+      clear_bluetooth_icon();
+      tft.drawBitmap(0, 0, epd_bitmap_bluetooth_disabled_90dp_FFFFFF_FILL0_wght400_GRAD0_opsz48, 30, 30, TFT_WHITE, TFT_GOOGLE_GREEN);
+    }
+    bluetooth_status = 2; // No change until next event
+  }
+
+  if (tft.getTouchRawZ() > 400)
+  {
+    uint16_t x, y;
+    tft.getTouchRaw(&x, &y);
+    x = map(x, TS_MINX, TS_MAXX, 240, 0);
+    y = map(y, TS_MINY, TS_MAXY, 0, 320);
+    Serial.print("X: ");
+    Serial.print(x);
+    Serial.print(" Y: ");
+    Serial.println(y);
+    tft.drawCircle(x, y, 5, TFT_RED);
+  }
+  /*if (millis() - t1 >= 1000)
+  {
+    t1 = millis();
+    BT.println("OK"); // health check
+  }*/
+  if (BT.available())
+  {
+    String bt_data = BT.readStringUntil('\n'); // Lee datos recibidos por Bluetooth
+    Serial.print("BT recibido: ");
+    // Serial.println(bt_data);
+    Serial.print("Longitud total: ");
+    Serial.println(bt_data.length());
+
+    JsonDocument navData;
+    DeserializationError error = deserializeJson(navData, bt_data);
+    if (error)
+    {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.f_str());
+    }
+    else
+    {
+      title = navData["title"].as<String>();
+      details = navData["details"].as<String>();
+      subText = navData["subText"].as<String>();
+
+      JsonArray bitmapArray = navData["icon"].as<JsonArray>();
+      u_int i = 0;
+      for (JsonVariant v : bitmapArray)
+      {
+        bitmapData[i] = v.as<uint8_t>();
+        /*Serial.print(v.as<uint8_t>());
+        Serial.print(" ");*/
+        i++;
+      }
+      if (title == "Standby State")
+      {
+        clear_indication_text();
+        tft.setTextSize(2);
+        tft.drawString("Standby", 120, 112);
+        tft.setTextSize(1);
+        tft.drawString("Esperando datos de navegacion", 120, 135);
+        clear_bitmap_area();
+        tft.drawBitmap(75, 0, epd_bitmap_location_off_90dp_FFFFFF_FILL0_wght400_GRAD0_opsz48, 90, 90, TFT_WHITE, TFT_GOOGLE_GREEN);
+      }
+      else
+      {
+        clear_indication_text();
+        tft.setTextSize(2);
+        tft.drawString(title, 120, 112);
+        tft.setTextSize(1);
+        tft.drawString(details, 120, 135);
+        tft.drawString(subText, 120, 158);
+
+        if (memcmp(bitmapData, old_bitmapData, sizeof(bitmapData)) != 0)
+        {
+          clear_bitmap_area();
+          displayBitmap(75, 0);
+          memcpy(old_bitmapData, bitmapData, sizeof(bitmapData));
+          Serial.println("Bitmap cambiado, redibujando...");
+        }
+        else
+        {
+          Serial.println("Bitmap sin cambios, no se redibuja.");
+        }
+      }
+    }
+  }
 }
